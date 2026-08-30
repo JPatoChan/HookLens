@@ -38,6 +38,33 @@ When the app starts, the local development URL is printed in the terminal.
 
 If no connection string is configured, HookLens uses `Data Source=hooklens.db`. Because this is a relative path, the database file is created in the application's current working directory.
 
+## Docker
+
+HookLens includes a multi-stage Dockerfile for containerized local development and testing.
+
+Build the image:
+
+```bash
+docker build -t hooklens .
+```
+
+Run HookLens on port 8080 and keep the SQLite database in a mounted volume:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -v "$(pwd)/data:/data" \
+  --name hooklens \
+  hooklens
+```
+
+The container runs on `http://localhost:8080` and stores its SQLite database at `/data/hooklens.db` by default. You can omit the volume if you want an ephemeral container-local database for testing, but a mounted path is recommended for persistence.
+
+## GitHub Actions
+
+This repository includes a simple CI workflow in `.github/workflows/ci.yml` that runs on pushes to `main` and on pull requests targeting `main`.
+
+The workflow installs .NET 10, restores dependencies, builds the solution in Release mode, and runs the full test suite.
+
 ## Dashboard
 
 The app serves a lightweight browser dashboard at `/`.
@@ -99,4 +126,4 @@ This is intended for local and test development use only. HookLens is not a prod
 
 ## Notes
 
-Storage is currently local and file-based using SQLite. HookLens does not yet include authentication, Docker support, or a separate frontend framework.
+Storage is currently local and file-based using SQLite. HookLens does not yet include authentication or a separate frontend framework.
