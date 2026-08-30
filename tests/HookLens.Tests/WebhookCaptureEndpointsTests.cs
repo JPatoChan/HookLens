@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using HookLens.Data;
+using HookLens.Models;
 using HookLens.Services;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,29 @@ namespace HookLens.Tests;
 
 public class WebhookCaptureEndpointsTests
 {
+    private sealed class RecordingReplayHandler : HttpMessageHandler
+    {
+        private readonly Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> _responseFactory;
+
+        public RecordingReplayHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> responseFactory)
+        {
+            _responseFactory = responseFactory;
+        }
+
+        public RecordingReplayHandler(Func<HttpRequestMessage, Task<HttpResponseMessage>> responseFactory)
+            : this((request, _) => responseFactory(request))
+        {
+        }
+
+        public List<HttpRequestMessage> Requests { get; } = new();
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return await _responseFactory(request, cancellationToken);
+        }
+    }
+
     private sealed class TemporarySqliteDatabase : IDisposable
     {
         private readonly string _directoryPath;
@@ -46,7 +70,7 @@ public class WebhookCaptureEndpointsTests
         }
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(TemporarySqliteDatabase database)
+    private static WebApplicationFactory<Program> CreateFactory(TemporarySqliteDatabase database, HttpMessageHandler? replayHandler = null)
     {
         return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
@@ -58,6 +82,13 @@ public class WebhookCaptureEndpointsTests
 
                     services.AddDbContext<HookLensDbContext>(options =>
                         options.UseSqlite(database.ConnectionString));
+
+                    if (replayHandler is not null)
+                    {
+                        services.RemoveAll<IWebhookReplayService>();
+                        services.AddHttpClient<IWebhookReplayService, WebhookReplayService>()
+                            .ConfigurePrimaryHttpMessageHandler(() => replayHandler);
+                    }
                 });
 
                 builder.ConfigureAppConfiguration((_, config) =>
@@ -217,6 +248,199 @@ public class WebhookCaptureEndpointsTests
         var response = await client.GetAsync("/requests/not-found-id");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Replay_ShouldReturnNotFoundForMissingRequest()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var replayHandler = new RecordingReplayHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var factory = CreateFactory(database, replayHandler);
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync("/requests/not-found/replay", new { targetUrl = "https://example.com/webhook" });
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Empty(replayHandler.Requests);
+    }
+
+    [Fact]
+    public async Task Replay_ShouldRejectMissingOrInvalidTargetUrl()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var replayHandler = new RecordingReplayHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)));
+        using var factory = CreateFactory(database, replayHandler);
+        using var client = factory.CreateClient();
+
+        var captureResponse = await client.PostAsync(
+            "/capture/replay-validation",
+            new StringContent("{\"event\":\"ping\"}", Encoding.UTF8, "application/json"));
+
+        var captured = await captureResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = captured.GetProperty("id").GetString();
+
+        var missingResponse = await client.PostAsJsonAsync($"/requests/{id}/replay", new { targetUrl = "" });
+        Assert.Equal(HttpStatusCode.BadRequest, missingResponse.StatusCode);
+
+        var badResponse = await client.PostAsJsonAsync($"/requests/{id}/replay", new { targetUrl = "ftp://example.com/webhook" });
+        Assert.Equal(HttpStatusCode.BadRequest, badResponse.StatusCode);
+
+        Assert.Empty(replayHandler.Requests);
+    }
+
+    [Fact]
+    public async Task Replay_ShouldPreserveContentTypeParametersAndForwardSupportedHeaders()
+    {
+        var requestHeaders = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Content-Type"] = ["application/json; charset=utf-8"],
+            ["X-Trace-Id"] = ["trace-123"],
+            ["Content-Disposition"] = ["attachment; filename=\"payload.json\""],
+            ["Host"] = ["injected.example"],
+            ["Connection"] = ["keep-alive"],
+            ["Content-Length"] = ["999"]
+        };
+
+        var captured = new CapturedRequest(
+            Id: "id-123",
+            Source: "github",
+            ReceivedAtUtc: DateTimeOffset.UtcNow,
+            Headers: requestHeaders,
+            Body: "{\"event\":\"ping\",\"ok\":true}");
+
+        var handler = new RecordingReplayHandler(async request =>
+        {
+            Assert.Equal("https://localhost:8080/webhook", request.RequestUri!.ToString());
+            Assert.Equal("application/json; charset=utf-8", request.Content!.Headers.ContentType!.ToString());
+            Assert.Equal("{\"event\":\"ping\",\"ok\":true}", await request.Content.ReadAsStringAsync());
+            Assert.True(request.Headers.TryGetValues("X-Trace-Id", out var traceIds));
+            Assert.Equal("trace-123", traceIds.Single());
+            Assert.True(request.Content.Headers.TryGetValues("Content-Disposition", out var dispositionValues));
+            Assert.Equal("attachment; filename=\"payload.json\"", dispositionValues.Single());
+            Assert.False(request.Headers.Contains("Host"));
+            Assert.False(request.Headers.Contains("Connection"));
+            Assert.NotEqual(999, request.Content.Headers.ContentLength);
+            Assert.Equal(26, request.Content.Headers.ContentLength);
+            return new HttpResponseMessage(HttpStatusCode.Accepted);
+        });
+
+        var service = new WebhookReplayService(new HttpClient(handler));
+        var result = await service.ReplayAsync(captured, new Uri("https://localhost:8080/webhook"));
+
+        Assert.Equal(202, result.StatusCode);
+        Assert.True(result.Succeeded);
+    }
+
+    [Fact]
+    public async Task Replay_ShouldIgnoreMalformedCapturedContentType()
+    {
+        var captured = new CapturedRequest(
+            Id: "id-123",
+            Source: "github",
+            ReceivedAtUtc: DateTimeOffset.UtcNow,
+            Headers: new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = ["not valid content-type"],
+                ["X-Trace-Id"] = ["trace-456"]
+            },
+            Body: "{\"event\":\"ping\"}");
+
+        var handler = new RecordingReplayHandler(async request =>
+        {
+            Assert.Equal("{\"event\":\"ping\"}", await request.Content!.ReadAsStringAsync());
+            Assert.Equal("trace-456", request.Headers.GetValues("X-Trace-Id").Single());
+            Assert.Equal(HttpMethod.Post, request.Method);
+            return new HttpResponseMessage(HttpStatusCode.Accepted);
+        });
+
+        var service = new WebhookReplayService(new HttpClient(handler));
+        var result = await service.ReplayAsync(captured, new Uri("https://localhost:8080/webhook"));
+
+        Assert.Equal(202, result.StatusCode);
+        Assert.True(result.Succeeded);
+        Assert.Null(result.Error);
+    }
+
+    [Fact]
+    public async Task Replay_ShouldPropagateCallerCancellation()
+    {
+        var captured = new CapturedRequest(
+            Id: "id-123",
+            Source: "github",
+            ReceivedAtUtc: DateTimeOffset.UtcNow,
+            Headers: new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Content-Type"] = ["application/json; charset=utf-8"]
+            },
+            Body: "{\"event\":\"ping\"}");
+
+        var handler = new RecordingReplayHandler(async (request, cancellationToken) =>
+        {
+            await Task.Delay(Timeout.Infinite, cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+
+        var service = new WebhookReplayService(new HttpClient(handler));
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ReplayAsync(captured, new Uri("https://example.com/webhook"), cancellationSource.Token));
+    }
+
+    [Fact]
+    public async Task Replay_ShouldHandleDownstreamFailureGracefully()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var replayHandler = new RecordingReplayHandler(_ => Task.FromException<HttpResponseMessage>(new HttpRequestException("downstream unavailable")));
+        using var factory = CreateFactory(database, replayHandler);
+        using var client = factory.CreateClient();
+
+        var captureResponse = await client.PostAsync(
+            "/capture/replay-failure",
+            new StringContent("{\"event\":\"failure\"}", Encoding.UTF8, "application/json"));
+
+        var captured = await captureResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = captured.GetProperty("id").GetString();
+
+        var response = await client.PostAsJsonAsync($"/requests/{id}/replay", new { targetUrl = "https://example.com/webhook" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.False(result.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("https://example.com/webhook", result.GetProperty("targetUrl").GetString());
+        Assert.True(result.TryGetProperty("error", out var error));
+        Assert.False(string.IsNullOrWhiteSpace(error.GetString()));
+    }
+
+    [Fact]
+    public async Task Replay_ShouldNotMutateOriginalCapturedRequest()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var replayHandler = new RecordingReplayHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NoContent)));
+        using var factory = CreateFactory(database, replayHandler);
+        using var client = factory.CreateClient();
+
+        var captureResponse = await client.PostAsync(
+            "/capture/replay-no-mutate",
+            new StringContent("{\"event\":\"original\"}", Encoding.UTF8, "application/json"));
+
+        var captured = await captureResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var id = captured.GetProperty("id").GetString();
+
+        var beforeResponse = await client.GetAsync($"/requests/{id}");
+        var beforePayload = await beforeResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        var replayResponse = await client.PostAsJsonAsync($"/requests/{id}/replay", new { targetUrl = "https://example.com/webhook" });
+        Assert.Equal(HttpStatusCode.OK, replayResponse.StatusCode);
+
+        var afterResponse = await client.GetAsync($"/requests/{id}");
+        var afterPayload = await afterResponse.Content.ReadFromJsonAsync<JsonElement>();
+        var allRequestsResponse = await client.GetAsync("/requests");
+        var allRequestsPayload = await allRequestsResponse.Content.ReadFromJsonAsync<JsonElement>();
+
+        Assert.Equal(beforePayload.GetProperty("body").GetString(), afterPayload.GetProperty("body").GetString());
+        Assert.Equal(beforePayload.GetProperty("source").GetString(), afterPayload.GetProperty("source").GetString());
+        Assert.Equal(1, allRequestsPayload.GetArrayLength());
     }
 
     [Fact]

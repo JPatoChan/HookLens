@@ -15,7 +15,7 @@ HookLens helps developers:
 
 - src/HookLens: ASP.NET Core application
 - src/HookLens/Endpoints: endpoint definitions
-- src/HookLens/Services: SQLite-backed storage and capture logic
+- src/HookLens/Services: SQLite-backed capture/storage logic and HTTP replay logic
 - src/HookLens/Data: EF Core DbContext and migrations
 - src/HookLens/Models: request and response models
 
@@ -49,6 +49,7 @@ The dashboard is intentionally minimal and developer-focused:
 - newest-first request list with payload previews
 - detail panel for headers, raw body, and JSON pretty-printing
 - copy buttons for request IDs and payload bodies
+- destination URL input and explicit request replay with success/error feedback
 - responsive layout for desktop and narrower screens
 
 Open http://localhost:5078/ in your browser after starting the app.
@@ -61,6 +62,7 @@ Open http://localhost:5078/ in your browser after starting the app.
 - `POST /capture/{source}` - captures an arbitrary JSON request body and stores it in SQLite
 - `GET /requests` - returns all captured requests, newest first
 - `GET /requests/{id}` - retrieves one captured request by ID
+- `POST /requests/{id}/replay` - replays the original captured body to an absolute `http` or `https` destination URL
 
 Examples:
 
@@ -76,8 +78,18 @@ curl -X POST http://localhost:5078/capture/github \
 curl http://localhost:5078/requests
 
 curl http://localhost:5078/requests/{request-id}
+
+curl -X POST http://localhost:5078/requests/{request-id}/replay \
+  -H "Content-Type: application/json" \
+  -d '{"targetUrl":"http://localhost:8080/webhook"}'
 ```
+
+## Replay
+
+HookLens can replay a previously captured request to a new destination. The original body is sent as an HTTP `POST` using the recorded `Content-Type` when available, while transport-specific headers such as `Host`, `Connection`, and `Content-Length` that should be regenerated or omitted for the outbound request are excluded before the outbound call.
+
+This is intended for local and test development use only. HookLens is not a production-grade relay or message broker.
 
 ## Notes
 
-Storage is currently local and file-based using SQLite. HookLens does not yet include replay, filtering, authentication, Docker support, or a separate frontend framework.
+Storage is currently local and file-based using SQLite. HookLens does not yet include filtering, authentication, Docker support, or a separate frontend framework.

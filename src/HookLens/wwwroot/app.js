@@ -15,6 +15,9 @@ const detailId = document.getElementById('detailId');
 const detailReceivedAt = document.getElementById('detailReceivedAt');
 const detailHeaders = document.getElementById('detailHeaders');
 const detailBody = document.getElementById('detailBody');
+const replayUrlInput = document.getElementById('replayUrlInput');
+const replayButton = document.getElementById('replayButton');
+const replayResult = document.getElementById('replayResult');
 
 function formatTimestamp(value) {
   if (!value) {
@@ -115,6 +118,24 @@ function prettyPrintBody(rawBody) {
   }
 }
 
+function updateReplayControls() {
+  const selectedRequest = state.requests.find((item) => item.id === state.selectedRequestId);
+  const isEnabled = Boolean(selectedRequest);
+  replayButton.disabled = !isEnabled;
+  replayUrlInput.disabled = !isEnabled;
+
+  if (!isEnabled) {
+    replayUrlInput.value = '';
+    replayResult.textContent = '';
+    replayResult.className = 'replay-result';
+  }
+}
+
+function setReplayStatus(message, isError) {
+  replayResult.textContent = message;
+  replayResult.className = `replay-result ${isError ? 'error' : 'success'}`;
+}
+
 function selectRequest(requestId) {
   const request = state.requests.find((item) => item.id === requestId);
   if (!request) {
@@ -134,6 +155,10 @@ function selectRequest(requestId) {
   detailBody.textContent = prettyBody || '(empty body)';
   detailBody.dataset.rawBody = request.body ?? '';
 
+  replayUrlInput.value = '';
+  replayResult.textContent = '';
+  replayResult.className = 'replay-result';
+  updateReplayControls();
   renderList();
 }
 
@@ -163,9 +188,64 @@ async function loadRequests() {
     } else {
       detailEmpty.classList.remove('hidden');
       detailCard.classList.add('hidden');
+      updateReplayControls();
     }
   } catch (error) {
     requestList.innerHTML = `<div class="empty-state">Unable to load captured requests. ${escapeHtml(String(error.message))}</div>`;
+  }
+}
+
+async function replaySelectedRequest() {
+  if (!state.selectedRequestId) {
+    return;
+  }
+
+  const targetUrl = replayUrlInput.value.trim();
+  if (!targetUrl) {
+    setReplayStatus('Please enter a destination URL before replaying.', true);
+    return;
+  }
+
+  replayButton.disabled = true;
+  setReplayStatus('Replaying request…', false);
+
+  try {
+    const response = await fetch(`/requests/${encodeURIComponent(state.selectedRequestId)}/replay`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ targetUrl })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const errorMessage = payload?.error || `Replay failed with status ${response.status}.`;
+      setReplayStatus(errorMessage, true);
+      return;
+    }
+
+    const downstreamStatus = payload?.statusCode ?? null;
+
+    if (payload?.succeeded) {
+      const successMessage = `Replay succeeded. Downstream status: ${downstreamStatus ?? 'n/a'}.`;
+      setReplayStatus(successMessage, false);
+      return;
+    }
+
+    if (payload?.error) {
+      const statusSuffix = downstreamStatus != null ? ` Downstream status: ${downstreamStatus}.` : '';
+      setReplayStatus(`Replay failed: ${payload.error}${statusSuffix}`, true);
+      return;
+    }
+
+    const statusText = downstreamStatus != null ? `Replay failed. Downstream status: ${downstreamStatus}.` : 'Replay failed. Downstream status: n/a.';
+    setReplayStatus(statusText, true);
+  } catch (error) {
+    setReplayStatus(`Replay failed: ${error.message}`, true);
+  } finally {
+    replayButton.disabled = false;
   }
 }
 
@@ -185,4 +265,6 @@ document.querySelectorAll('.copy-button').forEach((button) => {
   });
 });
 
+replayButton.addEventListener('click', replaySelectedRequest);
+updateReplayControls();
 loadRequests();

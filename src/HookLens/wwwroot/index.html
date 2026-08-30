@@ -94,6 +94,20 @@
                 </div>
                 <pre id="detailBody" class="body-output"></pre>
               </div>
+
+              <div class="section-block replay-block">
+                <div class="section-title-row">
+                  <h3>Replay</h3>
+                </div>
+
+                <div class="replay-controls">
+                  <label class="replay-label" for="replayUrlInput">Destination URL</label>
+                  <input id="replayUrlInput" class="replay-input" type="url" placeholder="http://localhost:8080/webhook" autocomplete="off" />
+                  <button id="replayButton" type="button" class="replay-button" disabled>Replay request</button>
+                </div>
+
+                <div id="replayResult" class="replay-result" aria-live="polite"></div>
+              </div>
             </div>
           </aside>
         </section>

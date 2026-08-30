@@ -9,6 +9,7 @@ var connectionString = builder.Configuration.GetConnectionString("HookLens") ?? 
 
 builder.Services.AddDbContext<HookLensDbContext>(options => options.UseSqlite(connectionString));
 builder.Services.AddScoped<IWebhookCaptureStore, SqliteWebhookCaptureStore>();
+builder.Services.AddHttpClient<IWebhookReplayService, WebhookReplayService>();
 
 var app = builder.Build();
 
