@@ -47,6 +47,7 @@ The dashboard is intentionally minimal and developer-focused:
 - dark terminal-inspired UI
 - summary cards for request totals and freshness
 - newest-first request list with payload previews
+- search and source filters above the captured request list
 - detail panel for headers, raw body, and JSON pretty-printing
 - copy buttons for request IDs and payload bodies
 - destination URL input and explicit request replay with success/error feedback
@@ -60,7 +61,7 @@ Open http://localhost:5078/ in your browser after starting the app.
 - `GET /health` - returns basic health information
 - `GET /status` - returns service metadata and readiness status
 - `POST /capture/{source}` - captures an arbitrary JSON request body and stores it in SQLite
-- `GET /requests` - returns all captured requests, newest first
+- `GET /requests` - returns all captured requests, newest first; supports optional `source` and `q` filters
 - `GET /requests/{id}` - retrieves one captured request by ID
 - `POST /requests/{id}/replay` - replays the original captured body to an absolute `http` or `https` destination URL
 
@@ -74,6 +75,12 @@ curl http://localhost:5078/status
 curl -X POST http://localhost:5078/capture/github \
   -H "Content-Type: application/json" \
   -d '{"event":"ping","ok":true}'
+
+curl "http://localhost:5078/requests?source=github"
+
+curl "http://localhost:5078/requests?q=ping"
+
+curl "http://localhost:5078/requests?source=github&q=ping"
 
 curl http://localhost:5078/requests
 
@@ -92,4 +99,4 @@ This is intended for local and test development use only. HookLens is not a prod
 
 ## Notes
 
-Storage is currently local and file-based using SQLite. HookLens does not yet include filtering, authentication, Docker support, or a separate frontend framework.
+Storage is currently local and file-based using SQLite. HookLens does not yet include authentication, Docker support, or a separate frontend framework.

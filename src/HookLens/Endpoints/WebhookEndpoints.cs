@@ -36,7 +36,7 @@ public static class WebhookEndpoints
             return Results.Created($"/requests/{capturedRequest.Id}", capturedRequest);
         });
 
-        app.MapGet("/requests", (IWebhookCaptureStore store) => Results.Ok(store.GetAllNewestFirst()));
+        app.MapGet("/requests", (string? source, string? q, IWebhookCaptureStore store) => Results.Ok(store.GetAllNewestFirst(source, q)));
 
         app.MapGet("/requests/{id}", (string id, IWebhookCaptureStore store) =>
         {

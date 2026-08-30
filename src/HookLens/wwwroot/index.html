@@ -48,6 +48,18 @@
               <h2>Captured requests</h2>
             </div>
 
+            <div class="request-toolbar" aria-label="Request filters">
+              <label class="sr-only" for="requestSearchInput">Search requests</label>
+              <input id="requestSearchInput" class="request-search" type="search" placeholder="Search requests…" autocomplete="off" />
+
+              <label class="sr-only" for="sourceFilterSelect">Filter by source</label>
+              <select id="sourceFilterSelect" class="source-filter">
+                <option value="">All sources</option>
+              </select>
+
+              <button id="clearFiltersButton" type="button" class="clear-filters-button hidden">Clear</button>
+            </div>
+
             <div id="requestList" class="request-list" data-role="request-list" aria-live="polite">
               <div class="empty-state">No captured requests yet. Send one to <code>/capture/{source}</code> to begin inspecting webhook traffic.</div>
             </div>

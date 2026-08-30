@@ -28,13 +28,16 @@ public sealed class InMemoryWebhookCaptureStore : IWebhookCaptureStore
         return capturedRequest;
     }
 
-    public IReadOnlyList<CapturedRequest> GetAllNewestFirst()
+    public IReadOnlyList<CapturedRequest> GetAllNewestFirst(string? source = null, string? query = null)
     {
         lock (_lock)
         {
-            return _requests
-                .OrderByDescending(request => request.ReceivedAtUtc)
-                .ToList();
+            return WebhookRequestFilter.Apply(
+                _requests
+                    .OrderByDescending(request => request.ReceivedAtUtc)
+                    .ToList(),
+                source,
+                query);
         }
     }
 

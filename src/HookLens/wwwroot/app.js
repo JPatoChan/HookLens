@@ -1,6 +1,9 @@
 const state = {
   requests: [],
-  selectedRequestId: null
+  selectedRequestId: null,
+  searchTerm: '',
+  sourceFilter: '',
+  sourceOptions: []
 };
 
 const requestList = document.getElementById('requestList');
@@ -10,6 +13,9 @@ const totalCount = document.getElementById('totalCount');
 const mostRecentSource = document.getElementById('mostRecentSource');
 const latestCaptureTime = document.getElementById('latestCaptureTime');
 
+const requestSearchInput = document.getElementById('requestSearchInput');
+const sourceFilterSelect = document.getElementById('sourceFilterSelect');
+const clearFiltersButton = document.getElementById('clearFiltersButton');
 const detailSource = document.getElementById('detailSource');
 const detailId = document.getElementById('detailId');
 const detailReceivedAt = document.getElementById('detailReceivedAt');
@@ -18,6 +24,8 @@ const detailBody = document.getElementById('detailBody');
 const replayUrlInput = document.getElementById('replayUrlInput');
 const replayButton = document.getElementById('replayButton');
 const replayResult = document.getElementById('replayResult');
+
+let searchDebounceTimer = null;
 
 function formatTimestamp(value) {
   if (!value) {
@@ -50,9 +58,23 @@ function renderSummary() {
   latestCaptureTime.textContent = latest ? formatTimestamp(latest.receivedAtUtc) : '—';
 }
 
+function renderSourceOptions() {
+  const options = ['<option value="">All sources</option>']
+    .concat(
+      state.sourceOptions.map((source) => `<option value="${escapeHtml(source)}">${escapeHtml(source)}</option>`)
+    );
+
+  sourceFilterSelect.innerHTML = options.join('');
+  sourceFilterSelect.value = state.sourceFilter || '';
+}
+
 function renderList() {
   if (state.requests.length === 0) {
-    requestList.innerHTML = '<div class="empty-state">No captured requests yet. Send one to <code>/capture/{source}</code> to begin inspecting webhook traffic.</div>';
+    const emptyMessage = state.searchTerm || state.sourceFilter
+      ? 'No requests match these filters.'
+      : 'No captured requests yet. Send one to <code>/capture/{source}</code> to begin inspecting webhook traffic.';
+
+    requestList.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
     return;
   }
 
@@ -118,6 +140,13 @@ function prettyPrintBody(rawBody) {
   }
 }
 
+function updateFilterControls() {
+  const hasActiveFilters = Boolean(state.searchTerm || state.sourceFilter);
+  clearFiltersButton.classList.toggle('hidden', !hasActiveFilters);
+  requestSearchInput.value = state.searchTerm;
+  sourceFilterSelect.value = state.sourceFilter || '';
+}
+
 function updateReplayControls() {
   const selectedRequest = state.requests.find((item) => item.id === state.selectedRequestId);
   const isEnabled = Boolean(selectedRequest);
@@ -162,15 +191,36 @@ function selectRequest(requestId) {
   renderList();
 }
 
+function getRequestListUrl() {
+  const params = new URLSearchParams();
+
+  if (state.sourceFilter) {
+    params.set('source', state.sourceFilter);
+  }
+
+  if (state.searchTerm) {
+    params.set('q', state.searchTerm);
+  }
+
+  const queryString = params.toString();
+  return queryString ? `/requests?${queryString}` : '/requests';
+}
+
 async function loadRequests() {
   try {
-    const response = await fetch('/requests');
+    const response = await fetch(getRequestListUrl());
     if (!response.ok) {
       throw new Error(`Failed to load requests: ${response.status}`);
     }
 
     const requests = await response.json();
     state.requests = Array.isArray(requests) ? requests : [];
+
+    const discoveredSources = state.requests
+      .map((request) => request.source)
+      .filter(Boolean);
+
+    state.sourceOptions = [...new Set([...state.sourceOptions, ...discoveredSources])].sort((left, right) => left.localeCompare(right));
 
     if (state.selectedRequestId && !state.requests.some((request) => request.id === state.selectedRequestId)) {
       state.selectedRequestId = state.requests[0]?.id ?? null;
@@ -181,6 +231,7 @@ async function loadRequests() {
     }
 
     renderSummary();
+    renderSourceOptions();
     renderList();
 
     if (state.selectedRequestId) {
@@ -190,6 +241,8 @@ async function loadRequests() {
       detailCard.classList.add('hidden');
       updateReplayControls();
     }
+
+    updateFilterControls();
   } catch (error) {
     requestList.innerHTML = `<div class="empty-state">Unable to load captured requests. ${escapeHtml(String(error.message))}</div>`;
   }
@@ -265,6 +318,32 @@ document.querySelectorAll('.copy-button').forEach((button) => {
   });
 });
 
+requestSearchInput.addEventListener('input', (event) => {
+  state.searchTerm = event.target.value.trim();
+
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+  }
+
+  searchDebounceTimer = setTimeout(() => {
+    loadRequests();
+  }, 180);
+});
+
+sourceFilterSelect.addEventListener('change', (event) => {
+  state.sourceFilter = event.target.value;
+  loadRequests();
+});
+
+clearFiltersButton.addEventListener('click', () => {
+  state.searchTerm = '';
+  state.sourceFilter = '';
+  requestSearchInput.value = '';
+  sourceFilterSelect.value = '';
+  loadRequests();
+});
+
 replayButton.addEventListener('click', replaySelectedRequest);
 updateReplayControls();
+updateFilterControls();
 loadRequests();

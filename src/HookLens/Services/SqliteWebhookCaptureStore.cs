@@ -50,9 +50,9 @@ public sealed class SqliteWebhookCaptureStore : IWebhookCaptureStore
         return capturedRequest;
     }
 
-    public IReadOnlyList<CapturedRequest> GetAllNewestFirst()
+    public IReadOnlyList<CapturedRequest> GetAllNewestFirst(string? source = null, string? query = null)
     {
-        return _dbContext.CapturedRequests
+        var requests = _dbContext.CapturedRequests
             .AsNoTracking()
             .OrderByDescending(request => request.ReceivedAtUtc)
             .Select(request => new CapturedRequest(
@@ -62,6 +62,8 @@ public sealed class SqliteWebhookCaptureStore : IWebhookCaptureStore
                 Headers: DeserializeHeaders(request.HeadersJson),
                 Body: request.Body))
             .ToList();
+
+        return WebhookRequestFilter.Apply(requests, source, query);
     }
 
     public bool TryGetById(string id, out CapturedRequest? capturedRequest)

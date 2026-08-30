@@ -214,6 +214,120 @@ public class WebhookCaptureEndpointsTests
     }
 
     [Fact]
+    public async Task Requests_ShouldFilterBySourceCaseInsensitively()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        await client.PostAsync("/capture/GitHub", new StringContent("{\"event\":\"one\"}", Encoding.UTF8, "application/json"));
+        await client.PostAsync("/capture/githubish", new StringContent("{\"event\":\"two\"}", Encoding.UTF8, "application/json"));
+        await client.PostAsync("/capture/slack", new StringContent("{\"event\":\"three\"}", Encoding.UTF8, "application/json"));
+
+        var response = await client.GetAsync("/requests?source=github");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, payload.GetArrayLength());
+        Assert.Equal("GitHub", payload[0].GetProperty("source").GetString());
+    }
+
+    [Fact]
+    public async Task Requests_ShouldFilterByBodyTextSearchCaseInsensitively()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        await client.PostAsync("/capture/github", new StringContent("{\"event\":\"alpha\"}", Encoding.UTF8, "application/json"));
+        await client.PostAsync("/capture/slack", new StringContent("{\"event\":\"beta\"}", Encoding.UTF8, "application/json"));
+
+        var response = await client.GetAsync("/requests?q=ALPHA");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, payload.GetArrayLength());
+        Assert.Equal("github", payload[0].GetProperty("source").GetString());
+    }
+
+    [Fact]
+    public async Task Requests_ShouldFilterByHeaderTextSearch()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Post, "http://localhost/capture/github");
+        firstRequest.Headers.Add("X-Trace-Id", "trace-4321");
+        firstRequest.Content = new StringContent("{\"event\":\"alpha\"}", Encoding.UTF8, "application/json");
+        var firstResponse = await client.SendAsync(firstRequest);
+        Assert.Equal(HttpStatusCode.Created, firstResponse.StatusCode);
+
+        await client.PostAsync("/capture/slack", new StringContent("{\"event\":\"beta\"}", Encoding.UTF8, "application/json"));
+
+        var response = await client.GetAsync("/requests?q=trace-4321");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, payload.GetArrayLength());
+        Assert.Equal("github", payload[0].GetProperty("source").GetString());
+    }
+
+    [Fact]
+    public async Task Requests_ShouldCombineSourceAndTextFilters()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        await client.PostAsync("/capture/github", new StringContent("{\"event\":\"alpha\"}", Encoding.UTF8, "application/json"));
+        await client.PostAsync("/capture/slack", new StringContent("{\"event\":\"alpha\"}", Encoding.UTF8, "application/json"));
+        await client.PostAsync("/capture/slack", new StringContent("{\"event\":\"beta\"}", Encoding.UTF8, "application/json"));
+
+        var response = await client.GetAsync("/requests?source=slack&q=ALPHA");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(1, payload.GetArrayLength());
+        Assert.Equal("slack", payload[0].GetProperty("source").GetString());
+        Assert.Contains("alpha", payload[0].GetProperty("body").GetString());
+    }
+
+    [Fact]
+    public async Task Requests_ShouldReturnEmptyArrayWhenNoFiltersMatch()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        await client.PostAsync("/capture/github", new StringContent("{\"event\":\"alpha\"}", Encoding.UTF8, "application/json"));
+
+        var response = await client.GetAsync("/requests?source=slack&q=nope");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(JsonValueKind.Array, payload.ValueKind);
+        Assert.Equal(0, payload.GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Requests_ShouldIgnoreWhitespaceOnlyFilters()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        await client.PostAsync("/capture/github", new StringContent("{\"event\":\"alpha\"}", Encoding.UTF8, "application/json"));
+        await client.PostAsync("/capture/slack", new StringContent("{\"event\":\"beta\"}", Encoding.UTF8, "application/json"));
+
+        var response = await client.GetAsync("/requests?source=%20%20&q=%20%20");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(2, payload.GetArrayLength());
+    }
+
+    [Fact]
     public async Task GetRequestById_ShouldReturnMatchingCapturedRequest()
     {
         using var database = new TemporarySqliteDatabase();
