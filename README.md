@@ -14,6 +14,10 @@ HookLens is a lightweight .NET developer tool for capturing, inspecting, and rep
 - Run locally or in a Docker container with a mounted SQLite data path
 - Verify changes with GitHub Actions CI and automated integration tests
 
+## Dashboard
+
+![HookLens dashboard showing captured webhook requests, inspection, filtering, and replay](docs/assets/hooklens-dashboard.png)
+
 ## Tech Stack
 
 - .NET 10 and ASP.NET Core minimal APIs
@@ -84,6 +88,10 @@ curl "http://localhost:5078/requests?source=github&q=ping"
 ## CI
 
 The workflow in `.github/workflows/ci.yml` runs on pushes to `main` and pull requests targeting `main`. It installs .NET 10, restores dependencies, builds the solution in Release mode, and runs the complete test suite.
+
+## Screenshots
+
+The dashboard is served directly from `src/HookLens/wwwroot`. Screenshots are intentionally not included yet because this environment does not provide a reliable browser capture tool; clean populated dashboard screenshots should be added under `docs/assets/` before a public portfolio release.
 
 ## Release Notes: v1.0.0
 
