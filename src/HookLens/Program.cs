@@ -1,11 +1,22 @@
+using HookLens.Data;
 using HookLens.Endpoints;
 using HookLens.Services;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddSingleton<IWebhookCaptureStore, InMemoryWebhookCaptureStore>();
+var connectionString = builder.Configuration.GetConnectionString("HookLens") ?? "Data Source=hooklens.db";
+
+builder.Services.AddDbContext<HookLensDbContext>(options => options.UseSqlite(connectionString));
+builder.Services.AddScoped<IWebhookCaptureStore, SqliteWebhookCaptureStore>();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<HookLensDbContext>();
+    dbContext.Database.Migrate();
+}
 
 if (!app.Environment.IsDevelopment())
 {
