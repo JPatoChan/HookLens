@@ -1,0 +1,6 @@
+@HookLens_HostAddress = http://localhost:5158
+
+GET {{HookLens_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
