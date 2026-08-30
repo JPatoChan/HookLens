@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HookLens</title>
+    <meta name="description" content="HookLens captures, inspects, and debugs incoming webhooks." />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand-block">
+          <div class="brand-mark" aria-hidden="true">hl</div>
+          <div>
+            <h1 class="brand-name">HookLens</h1>
+            <div class="brand-tag">Capture. Inspect. Debug.</div>
+          </div>
+        </div>
+
+        <div class="status-pill" aria-live="polite">
+          <span class="status-dot" aria-hidden="true"></span>
+          Ready
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="stats-grid" aria-label="HookLens summary">
+          <article class="stat-card">
+            <div class="stat-label">Total captured</div>
+            <div id="totalCount" class="stat-value">0</div>
+          </article>
+
+          <article class="stat-card">
+            <div class="stat-label">Most recent source</div>
+            <div id="mostRecentSource" class="stat-value muted">—</div>
+          </article>
+
+          <article class="stat-card">
+            <div class="stat-label">Latest capture</div>
+            <div id="latestCaptureTime" class="stat-value muted">—</div>
+          </article>
+        </section>
+
+        <section class="content-grid">
+          <div class="panel request-panel">
+            <div class="panel-header">
+              <h2>Captured requests</h2>
+            </div>
+
+            <div id="requestList" class="request-list" data-role="request-list" aria-live="polite">
+              <div class="empty-state">No captured requests yet. Send one to <code>/capture/{source}</code> to begin inspecting webhook traffic.</div>
+            </div>
+          </div>
+
+          <aside class="panel detail-panel" aria-live="polite">
+            <div id="detailEmpty" class="detail-empty">
+              Select a captured request to inspect headers and payload data.
+            </div>
+
+            <div id="detailCard" class="detail-card hidden">
+              <div class="detail-header">
+                <div>
+                  <div class="detail-label">Source</div>
+                  <div id="detailSource" class="detail-source"></div>
+                </div>
+                <div class="detail-actions">
+                  <button type="button" class="copy-button" data-copy-target="request-id">Copy ID</button>
+                </div>
+              </div>
+
+              <dl class="meta-list">
+                <div class="meta-row">
+                  <dt>Request ID</dt>
+                  <dd id="detailId"></dd>
+                </div>
+                <div class="meta-row">
+                  <dt>Received</dt>
+                  <dd id="detailReceivedAt"></dd>
+                </div>
+              </dl>
+
+              <div class="section-block">
+                <div class="section-title-row">
+                  <h3>Headers</h3>
+                </div>
+                <div id="detailHeaders" class="header-list"></div>
+              </div>
+
+              <div class="section-block">
+                <div class="section-title-row">
+                  <h3>Body</h3>
+                  <button type="button" class="copy-button secondary" data-copy-target="payload-body">Copy payload</button>
+                </div>
+                <pre id="detailBody" class="body-output"></pre>
+              </div>
+            </div>
+          </aside>
+        </section>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

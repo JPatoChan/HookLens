@@ -108,6 +108,39 @@ public class WebhookCaptureEndpointsTests
     }
 
     [Fact]
+    public async Task Homepage_ShouldServeDashboardShell()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("HookLens", html);
+        Assert.Contains("Capture. Inspect. Debug.", html);
+        Assert.Contains("id=\"requestList\"", html);
+        Assert.Contains("id=\"detailBody\"", html);
+    }
+
+    [Fact]
+    public async Task Homepage_ShouldIncludeEmptyStateWhenNoRequestsExist()
+    {
+        using var database = new TemporarySqliteDatabase();
+        using var factory = CreateFactory(database);
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync("/");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var html = await response.Content.ReadAsStringAsync();
+        Assert.Contains("No captured requests yet", html);
+    }
+
+    [Fact]
     public async Task Capture_ShouldPersistRequestAndReturnCreatedResponse()
     {
         using var database = new TemporarySqliteDatabase();

@@ -37,13 +37,30 @@ dotnet run --project src/HookLens/HookLens.csproj --urls http://localhost:5078
 When the app starts, the local development URL is printed in the terminal.
 
 If no connection string is configured, HookLens uses `Data Source=hooklens.db`. Because this is a relative path, the database file is created in the application's current working directory.
+
+## Dashboard
+
+The app serves a lightweight browser dashboard at `/`.
+
+The dashboard is intentionally minimal and developer-focused:
+
+- dark terminal-inspired UI
+- summary cards for request totals and freshness
+- newest-first request list with payload previews
+- detail panel for headers, raw body, and JSON pretty-printing
+- copy buttons for request IDs and payload bodies
+- responsive layout for desktop and narrower screens
+
+Open http://localhost:5078/ in your browser after starting the app.
+
 ## Endpoints
 
-- GET /health - returns basic health information
-- GET /status - returns service metadata and readiness status
-- POST /capture/{source} - captures an arbitrary JSON request body and stores it in SQLite
-- GET /requests - returns all captured requests, newest first
-- GET /requests/{id} - retrieves one captured request by ID
+- `GET /` - dashboard homepage
+- `GET /health` - returns basic health information
+- `GET /status` - returns service metadata and readiness status
+- `POST /capture/{source}` - captures an arbitrary JSON request body and stores it in SQLite
+- `GET /requests` - returns all captured requests, newest first
+- `GET /requests/{id}` - retrieves one captured request by ID
 
 Examples:
 
@@ -63,4 +80,4 @@ curl http://localhost:5078/requests/{request-id}
 
 ## Notes
 
-Storage is currently local and file-based using SQLite. HookLens does not yet include replay, filtering, authentication, frontend tooling, or Docker support.
+Storage is currently local and file-based using SQLite. HookLens does not yet include replay, filtering, authentication, Docker support, or a separate frontend framework.
