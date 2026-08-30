@@ -1,25 +1,22 @@
 # HookLens
 
-HookLens is a small .NET developer utility for inspecting webhook traffic as it flows through local and test environments. The project is intentionally scoped to a simple foundation: a lightweight ASP.NET Core service that exposes status and health endpoints, with a clean architecture that can grow into request capture, analysis, and replay features over time.
-
-This repository currently contains only the initial foundation. The application does not yet implement webhook capture, persistence, replay, or a user interface.
+HookLens is a small .NET developer utility for inspecting webhook traffic in local and test environments. It provides a lightweight API for capturing incoming HTTP requests and reviewing the payloads in a simple in-memory store.
 
 ## Purpose
 
-The long-term vision for HookLens is to help developers:
+HookLens helps developers:
 
-- inspect incoming HTTP webhook payloads
-- validate headers, body content, and routing behavior
-- replay captured requests to downstream systems
-- diagnose integration issues in a local development workflow
-
-For now, the goal is to establish the project skeleton and a simple HTTP API that is easy to extend.
+- inspect incoming webhook payloads
+- validate headers and raw request bodies
+- trace requests from specific sources
+- troubleshoot integrations during local development
 
 ## Project structure
 
 - src/HookLens: ASP.NET Core application
 - src/HookLens/Endpoints: endpoint definitions
-- src/HookLens/Models: DTOs and response models
+- src/HookLens/Services: in-memory storage and capture logic
+- src/HookLens/Models: request and response models
 
 ## Prerequisites
 
@@ -33,7 +30,7 @@ From the repository root, run:
 ```bash
 dotnet restore
 dotnet build
-dotnet run --project src/HookLens/HookLens.csproj
+dotnet run --project src/HookLens/HookLens.csproj --urls http://localhost:5078
 ```
 
 When the app starts, the local development URL is printed in the terminal.
@@ -42,16 +39,26 @@ When the app starts, the local development URL is printed in the terminal.
 
 - GET /health - returns basic health information
 - GET /status - returns service metadata and readiness status
+- POST /capture/{source} - captures an arbitrary JSON request body and stores it in memory
+- GET /requests - returns all captured requests, newest first
+- GET /requests/{id} - retrieves one captured request by ID
 
 Examples:
 
 ```bash
-curl http://localhost:PORT/health
-curl http://localhost:PORT/status
-```
+curl http://localhost:5078/health
 
-Replace `PORT` with the port printed by `dotnet run` when the application starts.
+curl http://localhost:5078/status
+
+curl -X POST http://localhost:5078/capture/github \
+  -H "Content-Type: application/json" \
+  -d '{"event":"ping","ok":true}'
+
+curl http://localhost:5078/requests
+
+curl http://localhost:5078/requests/{request-id}
+```
 
 ## Notes
 
-This is intentionally a simple, maintainable foundation for a small developer utility. The architecture remains focused on a minimal HTTP service and does not yet include persistence, replay, or frontend tooling.
+This phase intentionally keeps request storage in memory only. It does not yet include persistence, authentication, replay, frontend tooling, or Docker support. Captured requests are lost when the application stops or restarts.
